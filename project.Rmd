@@ -1,0 +1,126 @@
+#**Predictions on Weight Lifting Exercises**
+*by Marlina Kosasih*
+
+###**1. Executive Summary**
+Using devices such as Jawbone Up and Fitbit, datasets were collected from six participants to perform weight lifting exercises. The participants were asked to simulate the exact exercise and to simulate 4 common mistakes. The results were grouped into 5 classes: doing exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E).
+
+This analysis is performed to predict the manner in which the participant did the exercise.  The data was collected and filtered to provide the most relevant information for the predictions.  Once it was cleaned, the data was separated into 60% train sets and 40% test sets for Cross Validations.  Decision tree method was first evaluated with only less than 60% accuracy, more than 40% out-of-sample error.  Random Forest method generated a better prediction model with 99.2%, less than 1% out-of-sample error
+
+###**2. Inputing Data**
+The analysis was prepared and performed in R version 3.1.2 or later.  Few required packages are listed below:
+```{r,message=FALSE, warning=FALSE}
+require(caret); require(rpart.plot); library(RCurl)
+```
+
+2 Datasets are downloaded to current working directory.
+These data sets are the training data for fitting a model and the testing data to test the model as well as to submit the result.
+```{r}
+WD <- getwd()
+
+if(!file.exists(paste(WD,"/training.csv",sep=""))) {       
+download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", "training.csv", method="curl") }
+if(!file.exists(paste(WD,"/testing.csv",sep=""))) {
+download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv","testing.csv",method="curl") }
+
+training <- read.csv("training.csv", na.strings=c("NA","")); testing <- read.csv("testing.csv", na.strings=c("NA",""))
+
+dim(training)
+```
+
+###**3. Pre-Processing Data**
+The training dataset consist of `r ncol(training)` number of variables.  For fitting a prediction model, data must only consist of relevant predictors. The following are the steps to filter and clean the data.
+
+**3.1. Removing irrelevant variables**
+
+The first 7 columns in the data are only to inform the participants names/ID, time of exercises, etc.  These lists are not useful to predict the quality of participants activities.
+
+```{r}
+str(training[,1:7])
+training <- training[,-c(1:7)]
+```
+
+**3.2. Removing Zero or Near Zero Variance**
+
+The variables that have one unique value (zero variance) or somewhat unique values (near zero variance) will not be relevant for the predictions.  Therefore these variables will be removed.
+```{r}
+nzv <- nearZeroVar(training)
+Ftraining <- training[, -nzv]
+```
+
+**3.4. Removing predictors with NA more than 60%**
+
+To further retain relevant information for predictions, the data with many NA (more than 60%) will be omitted from the dataset.
+```{r}
+colRemove=0 ; j = 1
+for(i in 1:ncol(Ftraining)) {
+  if( sum( is.na( Ftraining[, i] ) ) /nrow(Ftraining) >= .6) {
+    colRemove[j] <- i
+    j = j+1  }
+  } 
+
+training <- Ftraining[,-colRemove]
+dim(training)
+```
+
+Numbers of predictors are now reduced to `r ncol(training)`
+
+**3.4. Matching predictors in Testing dataset**
+
+Once the training dataset was filtered and cleaned, the testing data set would only collect the same predictors as the training dataset.
+Adding the last column 'problem_id' for the result submissions.
+
+```{r}
+colset <- colnames(training)
+testing <- cbind(testing[,colnames(testing)%in% colset],testing$problem_id)
+```
+
+###**4. Cross Validation**
+To avoid over fitting the model, cross validation is performed by splitting the data into 2 sets of data: train and test.
+Since the dataset is considered medium sample size, the split between the train and test dataset was 60% and 40%.
+
+```{r}
+set.seed(123)
+inTrain<- createDataPartition(y=training$classe, p=0.6, list=FALSE)
+train <- training[inTrain,]
+test <- training[-inTrain,]
+```
+
+###**5. Prediction Model Selection**
+Since the data have many predictors, Decision Tree or Random Forests will be good methods to use; and they are both easy to interpret
+
+**5.1. Model 1: Decision Tree**
+
+A Decision Tree method was modeled based on the test dataset.
+```{r, cache=TRUE, message=FALSE, warning=FALSE}
+modFit1 <- train(classe~., method="rpart", data=train)
+print(modFit1$finalModel)
+```
+
+Checking the prediction model, the test dataset is used to evaluate the Out of Sample error and accuracy.
+
+```{r, message=FALSE, warning=FALSE}
+prediction1 <- predict(modFit1, newdata=test)
+confusionMatrix(prediction1,test$classe)
+```
+
+**The accuracy of this model is very low: less than 60% and Expected out of sample error is more than 40%**
+
+**5.2. Model 2: Random Forest**
+
+Next, to find a better accuracy, the Random Forests prediction method was being evaluated.  
+Bootstrap re-sampling in Random Forests can be very time consuming. To increase the speed of computations, the number of re-sampling iterations (k-folds) was set to 3. If the accuracy is low, k-fold can be increased.
+
+```{r, cache=TRUE, message=FALSE, warning=FALSE}
+modFit2 <- train(classe~., data=train, method="rf", prox=TRUE, trControl = trainControl(method = "cv", number = 3))
+print(modFit2$finalModel)
+```
+
+Checking the prediction model, the test dataset is used to evaluate the Out of Sample error and accuracy.
+```{r, message=FALSE, warning=FALSE}
+prediction2 <- predict(modFit2, newdata=test)
+confusionMatrix(prediction2,test$classe)
+```
+**The accuracy of this model is very high: 99% and Expected out of sample error is 1%**
+
+###**6. Conclusions**
+The best model to predict participants exercise quality was the Random Forests model.  With only 3-fold bootstrap re-sampling, the model will predict with 99.2% accuracy and 1% out-of-sample error.
